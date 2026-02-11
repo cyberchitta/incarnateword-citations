@@ -1,0 +1,4 @@
+interface:
+  display_name: "Incarnate Word Citations"
+  short_description: "Find citations for Aurobindo/Mother quotes."
+  default_prompt: "Use $incarnateword-citations to find citations for the following quote(s)."
