@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+type DeepLinkMode = "search" | "paragraph" | "both" | "none";
+
 type SearchParams = {
   q: string;
   page?: number;
@@ -19,6 +21,7 @@ type SearchParams = {
     | "volumeChapterDesc";
   stripHtml?: boolean;
   maxSnippet?: number;
+  deepLink?: DeepLinkMode;
 };
 
 type ResultPath = { t: string; u?: string };
@@ -36,6 +39,10 @@ type SearchResponse = {
   Paging?: { TotalCount?: number; TotalPagesCount?: number };
   suggesters?: string[];
   aggrs?: unknown;
+};
+
+type ChapterResponse = {
+  txt?: string;
 };
 
 const BASE_URL = "https://incarnateword.in";
@@ -107,6 +114,11 @@ function parseArgs(argv: string[]): SearchParams {
       i++;
       continue;
     }
+    if (key === "deepLink") {
+      params.deepLink = (next as DeepLinkMode) ?? "search";
+      i++;
+      continue;
+    }
   }
   return params;
 }
@@ -126,7 +138,7 @@ function buildQuery(params: SearchParams): string {
   return q.toString();
 }
 
-function formatResult(r: SearchResult): string {
+function formatResult(r: SearchResult, deepUrl?: string): string {
   const title = r.t ?? "(untitled)";
   const url = r.url ?? "";
   const snippet = r.txt ? r.txt.replace(/\s+/g, " ").trim() : "";
@@ -135,6 +147,7 @@ function formatResult(r: SearchResult): string {
     `Title: ${title}`,
     crumbs ? `Path: ${crumbs}` : undefined,
     url ? `URL: ${BASE_URL}${url}` : undefined,
+    deepUrl ? `Deep URL: ${deepUrl}` : undefined,
     snippet ? `Snippet: ${snippet}` : undefined,
   ].filter(Boolean);
   return lines.join("\n");
@@ -147,18 +160,108 @@ function stripHtml(input: string): string {
     .trim();
 }
 
-function toCitation(r: SearchResult): Record<string, string> {
+/** Normalize text for fuzzy paragraph matching: strip HTML, collapse whitespace, lowercase. */
+function normalizeText(s: string): string {
+  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Fetch chapter content and return paragraphs split on double-newline. */
+async function fetchChapterParagraphs(
+  chapterUrl: string,
+): Promise<string[] | null> {
+  // chapterUrl is like /cwsa/22/the-divine-life
+  const apiUrl = `${BASE_URL}/api${chapterUrl}?source=&onlyOrignalText=false`;
+  try {
+    const res = await fetch(apiUrl, { headers: { accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as ChapterResponse;
+    if (!data.txt) return null;
+    return data.txt.split(/\n\n+/).filter((s) => s.trim());
+  } catch {
+    return null;
+  }
+}
+
+/** Find 1-indexed paragraph number(s) whose text contains the snippet. */
+function findParagraphIds(
+  paragraphs: string[],
+  snippet: string,
+): number[] {
+  const norm = normalizeText(snippet);
+  if (norm.length === 0) return [];
+
+  // Try matching the full normalized snippet first
+  const ids: number[] = [];
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paraNorm = normalizeText(paragraphs[i]);
+    if (paraNorm.includes(norm)) {
+      ids.push(i + 1); // 1-indexed to match site's p1, p2, ...
+    }
+  }
+  if (ids.length > 0) return ids;
+
+  // Fallback: use a contiguous substring from the middle of the snippet.
+  // HTML stripping can introduce spacing artifacts at tag boundaries,
+  // so take a clean interior substring that avoids edges.
+  const len = norm.length;
+  const start = Math.floor(len * 0.1);
+  const end = Math.min(start + 80, len);
+  const probe = norm.slice(start, end).trim();
+  if (probe.length < 10) return [];
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paraNorm = normalizeText(paragraphs[i]);
+    if (paraNorm.includes(probe)) {
+      ids.push(i + 1);
+    }
+  }
+  return ids;
+}
+
+/** Build a deep link URL with ?search= and/or #pN based on mode. */
+function buildDeepUrl(
+  basePageUrl: string,
+  query: string,
+  paragraphIds: number[],
+  mode: DeepLinkMode,
+): string {
+  let url = basePageUrl;
+  if (mode === "search" || mode === "both") {
+    url += `?search=${encodeURIComponent(query)}`;
+  }
+  if ((mode === "paragraph" || mode === "both") && paragraphIds.length > 0) {
+    const anchor =
+      paragraphIds.length === 1
+        ? `p${paragraphIds[0]}`
+        : paragraphIds.length === 2 &&
+            paragraphIds[1] === paragraphIds[0] + 1
+          ? `p${paragraphIds[0]}-p${paragraphIds[1]}`
+          : paragraphIds.map((id) => `p${id}`).join(",");
+    url += `#${anchor}`;
+  }
+  return url;
+}
+
+function toCitation(
+  r: SearchResult,
+  deepUrl?: string,
+): Record<string, string> {
   const crumbs = (r.path ?? []).map((p) => p.t).filter(Boolean);
   const author = crumbs[0] ?? "";
   const work = crumbs[1] ?? "";
   const section = crumbs.slice(2).join(" > ");
-  return {
+  const pageUrl = r.url ? `${BASE_URL}${r.url}` : "";
+  const citation: Record<string, string> = {
     author,
     work,
     section,
     title: r.t ?? "",
-    url: r.url ? `${BASE_URL}${r.url}` : "",
+    url: pageUrl,
   };
+  if (deepUrl) {
+    citation.deepUrl = deepUrl;
+  }
+  return citation;
 }
 
 async function main() {
@@ -186,13 +289,41 @@ async function main() {
     return { ...r, txt: trimmed };
   });
 
+  const mode = args.deepLink ?? "none";
+  const needsParagraphs = mode === "paragraph" || mode === "both";
+
+  // For paragraph deep links, fetch chapter content per unique URL
+  const chapterCache = new Map<string, string[] | null>();
+  if (needsParagraphs) {
+    const uniqueUrls = [...new Set(cleanedResults.map((r) => r.url).filter(Boolean))];
+    // Fetch in parallel, limited to top 5 chapters to avoid excessive requests
+    await Promise.all(
+      uniqueUrls.slice(0, 5).map(async (chUrl) => {
+        chapterCache.set(chUrl, await fetchChapterParagraphs(chUrl));
+      }),
+    );
+  }
+
+  // Build deep URLs for each result
+  const deepUrls: (string | undefined)[] = cleanedResults.map((r) => {
+    if (mode === "none" || !r.url) return undefined;
+    const pageUrl = `${BASE_URL}${r.url}`;
+    if (mode === "search") {
+      return buildDeepUrl(pageUrl, args.q, [], mode);
+    }
+    const paragraphs = chapterCache.get(r.url);
+    const paraIds =
+      paragraphs && r.txt ? findParagraphIds(paragraphs, r.txt) : [];
+    return buildDeepUrl(pageUrl, args.q, paraIds, mode);
+  });
+
   const output = {
     query: args,
     total: data.Paging?.TotalCount ?? null,
     pages: data.Paging?.TotalPagesCount ?? null,
     results: cleanedResults,
     suggesters: data.suggesters ?? [],
-    citations: cleanedResults.map(toCitation),
+    citations: cleanedResults.map((r, i) => toCitation(r, deepUrls[i])),
   };
 
   // Emit JSON to stdout (useful for piping) and a human summary to stderr.
@@ -201,7 +332,7 @@ async function main() {
     console.error("\nTop results:\n");
     cleanedResults.slice(0, 5).forEach((r, i) => {
       console.error(`--- ${i + 1} ---`);
-      console.error(formatResult(r));
+      console.error(formatResult(r, deepUrls[i]));
       console.error("");
     });
   }

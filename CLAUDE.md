@@ -12,10 +12,10 @@ Requires [Bun](https://bun.sh) runtime. Run from the repo root:
 
 ```bash
 bun run scripts/search.ts \
-  --q "the divine life" --phrase true --stripHtml true
+  --q "the divine life" --phrase true --stripHtml true --deepLink both
 ```
 
-All flags: `--q` (required), `--phrase`, `--anyTerm`, `--auth` (`sa`|`m`|`any`), `--comp` (`cwsa`|`sabcl`|`arya`|`cwm`|`agenda`|`any`), `--vol`, `--page`, `--sortby`, `--searched`, `--priorityIndex`, `--stripHtml`, `--maxSnippet`.
+All flags: `--q` (required), `--phrase`, `--anyTerm`, `--auth` (`sa`|`m`|`any`), `--comp` (`cwsa`|`sabcl`|`arya`|`cwm`|`agenda`|`any`), `--vol`, `--page`, `--sortby`, `--searched`, `--priorityIndex`, `--stripHtml`, `--maxSnippet`, `--deepLink` (`search`|`paragraph`|`both`|`none`).
 
 Output: JSON to stdout (for piping), human-readable summary to stderr.
 

@@ -66,6 +66,32 @@ Response:
 - `c`: array of results with `txt`, `url`, `t`, `path`
 - `Paging.TotalCount`, `Paging.TotalPagesCount`
 
+## Chapter Content
+
+`GET /api/{comp}/{vol}/{slug}`
+
+Query params:
+- `source` (string, optional): edition source
+- `onlyOrignalText` (bool, optional): original text only
+
+Response:
+- `txt`: full chapter text (paragraphs separated by `\n\n`)
+- `mot`: epigraph/motto (markdown blockquotes, rendered separately from `txt`)
+- `t`: chapter title
+- `paraByPara`: parallel translation data (if available)
+
+Notes: Paragraphs in `txt` split on `\n\n` map 1:1 to the site's dynamic `p1`, `p2`, ... IDs (assigned by client-side JS to `<p>` elements inside `.text-bg`). The `mot` content renders in a separate `.motto` container and does not affect paragraph numbering.
+
+## Deep Linking (site features)
+
+The site supports paragraph-level deep links and text highlighting:
+
+- `?search=<terms>` — highlights matching text (bold via mark.js) and scrolls to first match
+- `#pN` — scrolls to and background-highlights paragraph N (1-indexed)
+- `#pN-pM` — highlights a contiguous range of paragraphs
+- `#pN,pM,pO` — highlights non-contiguous paragraphs
+- Combined: `?search=<terms>#pN` — both text highlighting and paragraph anchoring
+
 ## Volumes / Metadata
 
 - `GET /api/vnew/{auth}/{comp}` returns volume lists for a compilation
@@ -73,4 +99,5 @@ Response:
 
 Notes:
 - Use exact-phrase search for direct quotes; fall back to `anyTerm` for paraphrases.
-- Prefer `url` from results for citations.
+- Prefer `deepUrl` (with `?search=` and/or `#pN`) from citations for the best user experience.
+- Fall back to `url` from results for plain chapter-level citations.

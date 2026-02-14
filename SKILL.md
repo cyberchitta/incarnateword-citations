@@ -28,7 +28,7 @@ Provide a short list of citations in Markdown. Each item should include:
 - Work / compilation (e.g., CWSA, SABCL, CWM, Agenda, Arya)
 - Volume (if present)
 - Chapter / section (from `path` or title)
-- URL
+- Deep URL (preferred) or URL
 - Short quote snippet (for verification)
 
 If no strong matches are found, say so and suggest a refined query (shorter fragment, alternate spelling, or different phrasing).
@@ -40,12 +40,22 @@ Use `scripts/search.ts` to query the API deterministically when needed.
 Example:
 
 ```bash
-bun run scripts/search.ts --q "the divine life" --phrase true --anyTerm false --auth any --comp any --page 1
+bun run scripts/search.ts --q "the divine life" --phrase true --anyTerm false --auth any --comp any --page 1 --deepLink both
 ```
 
 Helpful flags:
 - `--stripHtml true` to remove HTML tags from snippets.
 - `--maxSnippet 400` to truncate snippet length.
+- `--deepLink <mode>` to generate deep links that highlight and scroll to the matching passage.
+
+### Deep Link Modes (`--deepLink`)
+
+- `search` — Appends `?search=<query>` to each URL. The site highlights all occurrences and scrolls to the first match. Fast (no extra API calls).
+- `paragraph` — Fetches chapter content, identifies the matching paragraph, and appends `#pN`. The site scrolls to and highlights the paragraph background. Requires one extra API call per unique chapter.
+- `both` — Combines both: `?search=<query>#pN`. Best user experience: scrolls to the paragraph and highlights the search terms within it.
+- `none` — No deep linking (default, backward-compatible).
+
+Always prefer `--deepLink both` when providing citations to the user, unless speed is critical (use `search`) or the query is too generic for text highlighting (use `paragraph`).
 
 ## Defaults and Heuristics
 
