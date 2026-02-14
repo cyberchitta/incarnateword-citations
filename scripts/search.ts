@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { marked } from "marked";
+
 type DeepLinkMode = "search" | "paragraph" | "both" | "none";
 
 type SearchParams = {
@@ -165,7 +167,31 @@ function normalizeText(s: string): string {
   return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-/** Fetch chapter content and return paragraphs split on double-newline. */
+/**
+ * Render chapter text through marked() and extract the inner HTML of each
+ * <p> element.  The IW front-end assigns paragraph IDs (p1, p2, …) to every
+ * <p> inside `.text-bg`, so we must count paragraphs the same way.
+ *
+ * Splitting on `\n\n` is insufficient because Markdown thematic breaks (`---`)
+ * produce `<hr>` tags, not `<p>` tags, and other Markdown structures (headings,
+ * blockquotes, lists) also affect the `<p>` count.
+ */
+function chapterTextToParagraphs(txt: string): string[] {
+  const html = marked(txt, {
+    breaks: true,
+    gfm: true,
+  }) as string;
+  const paragraphs: string[] = [];
+  // Match each <p>…</p> block (marked output is well-formed, no nesting).
+  const re = /<p>([\s\S]*?)<\/p>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    paragraphs.push(m[1]);
+  }
+  return paragraphs;
+}
+
+/** Fetch chapter content and return paragraphs as the IW front-end sees them. */
 async function fetchChapterParagraphs(
   chapterUrl: string,
 ): Promise<string[] | null> {
@@ -176,7 +202,7 @@ async function fetchChapterParagraphs(
     if (!res.ok) return null;
     const data = (await res.json()) as ChapterResponse;
     if (!data.txt) return null;
-    return data.txt.split(/\n\n+/).filter((s) => s.trim());
+    return chapterTextToParagraphs(data.txt);
   } catch {
     return null;
   }
@@ -216,6 +242,17 @@ function findParagraphIds(
     }
   }
   return ids;
+}
+
+/**
+ * Extract the first highlighted match from a raw search-result snippet.
+ * The API wraps matches in <strong>…</strong>, so the content inside those
+ * tags is the text as it literally appears on the page (with punctuation).
+ * Falls back to the original query if no <strong> tag is found.
+ */
+function extractSearchHit(rawSnippet: string, fallback: string): string {
+  const m = rawSnippet.match(/<strong>([\s\S]*?)<\/strong>/i);
+  return m ? stripHtml(m[1]) : fallback;
 }
 
 /** Build a deep link URL with ?search= and/or #pN based on mode. */
@@ -304,17 +341,22 @@ async function main() {
     );
   }
 
-  // Build deep URLs for each result
-  const deepUrls: (string | undefined)[] = cleanedResults.map((r) => {
+  // Build deep URLs for each result.
+  // Use the raw (pre-stripHtml) snippet to extract the exact matched text
+  // from <strong> tags — this includes trailing punctuation as it appears on
+  // the page, which mark.js needs for accurate highlighting.
+  const deepUrls: (string | undefined)[] = cleanedResults.map((r, i) => {
     if (mode === "none" || !r.url) return undefined;
     const pageUrl = `${BASE_URL}${r.url}`;
+    const rawTxt = results[i]?.txt ?? "";
+    const searchHit = extractSearchHit(rawTxt, args.q);
     if (mode === "search") {
-      return buildDeepUrl(pageUrl, args.q, [], mode);
+      return buildDeepUrl(pageUrl, searchHit, [], mode);
     }
     const paragraphs = chapterCache.get(r.url);
     const paraIds =
       paragraphs && r.txt ? findParagraphIds(paragraphs, r.txt) : [];
-    return buildDeepUrl(pageUrl, args.q, paraIds, mode);
+    return buildDeepUrl(pageUrl, searchHit, paraIds, mode);
   });
 
   const output = {

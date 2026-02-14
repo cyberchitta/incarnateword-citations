@@ -13,8 +13,12 @@ mkdir -p ~/.claude/skills/incarnateword-citations/{scripts,references}
 # Download the required files
 BASE="https://raw.githubusercontent.com/cyberchitta/incarnateword-citations/main"
 curl -sL "$BASE/SKILL.md"           -o ~/.claude/skills/incarnateword-citations/SKILL.md
+curl -sL "$BASE/package.json"       -o ~/.claude/skills/incarnateword-citations/package.json
 curl -sL "$BASE/scripts/search.ts"  -o ~/.claude/skills/incarnateword-citations/scripts/search.ts
 curl -sL "$BASE/references/api.md"  -o ~/.claude/skills/incarnateword-citations/references/api.md
+
+# Install dependencies
+cd ~/.claude/skills/incarnateword-citations && bun install
 ```
 
 Then in any Claude Code session, provide a quote and ask for its source — the skill activates automatically.

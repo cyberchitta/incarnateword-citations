@@ -8,7 +8,7 @@ A Claude Code skill for finding citations in the works of Sri Aurobindo and The 
 
 ## Running the Search Script
 
-Requires [Bun](https://bun.sh) runtime. Run from the repo root:
+Requires [Bun](https://bun.sh) runtime. Install dependencies first (`bun install`), then run from the repo root:
 
 ```bash
 bun run scripts/search.ts \
