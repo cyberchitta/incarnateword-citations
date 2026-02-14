@@ -2,13 +2,28 @@
 
 A [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills) for finding citations in the works of Sri Aurobindo and The Mother via the [Incarnate Word](https://incarnateword.in) API.
 
-## Usage
+## Install
 
 Requires [Bun](https://bun.sh) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
 ```bash
+# Create the skill directory
+mkdir -p ~/.claude/skills/incarnateword-citations/{scripts,references}
+
+# Download the required files
+BASE="https://raw.githubusercontent.com/cyberchitta/incarnateword-citations/main"
+curl -sL "$BASE/SKILL.md"           -o ~/.claude/skills/incarnateword-citations/SKILL.md
+curl -sL "$BASE/scripts/search.ts"  -o ~/.claude/skills/incarnateword-citations/scripts/search.ts
+curl -sL "$BASE/references/api.md"  -o ~/.claude/skills/incarnateword-citations/references/api.md
+```
+
+Then in any Claude Code session, provide a quote and ask for its source — the skill activates automatically.
+
+## Usage
+
+```bash
 bun run scripts/search.ts \
-  --q "the divine life" --phrase true --stripHtml true
+  --q "the divine life" --phrase true --stripHtml true --deepLink both
 ```
 
 Or use it as a Claude Code skill — Claude will call the search script and format citations automatically.
