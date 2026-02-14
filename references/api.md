@@ -9,7 +9,7 @@ Base URL: `https://incarnateword.in`
 Query params (observed in UI code):
 - `q` (string, required): search query (URL-encoded)
 - `page` (int, required)
-- `auth` (string, optional): `sa` | `m` | `any`
+- `auth` (string, optional): `sa` (Sri Aurobindo) | `m` (the Mother, NOT `mother`) | `any` (both authors)
 - `comp` (string, optional): `cwsa` | `sabcl` | `arya` | `cwm` | `agenda` | `any`
 - `vol` (string, optional): volume number or comma-separated list
 - `phrase` (bool, optional): exact phrase search

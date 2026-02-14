@@ -15,7 +15,9 @@ Use the Incarnate Word search API to locate matching passages and return verifia
    - If the quote is partial or uncertain, use `anyTerm=true` and `phrase=false` for recall, then narrow.
 2. Call `GET /api/v2/search` with default scope covering both authors.
    - Default scope: `auth=any` and `comp=any`.
+   - **IMPORTANT**: If searching for Mother's quotes specifically, use `auth=m` (NOT `auth=mother`). However, `auth=any` works for all Mother's works including Agenda and CWM.
    - If the user asks for a specific author or compilation, set `auth`/`comp` accordingly.
+   - Valid author values: `sa` (Sri Aurobindo), `m` (the Mother), `any` (both).
 3. Review top results and extract citations.
    - Prefer results with clear breadcrumbs (`path`) and stable `url`.
    - Use the returned `txt` snippet to verify the quote.
@@ -37,10 +39,17 @@ If no strong matches are found, say so and suggest a refined query (shorter frag
 
 Use `scripts/search.ts` to query the API deterministically when needed.
 
-Example:
+Examples:
 
 ```bash
+# Search Sri Aurobindo's works
 bun run scripts/search.ts --q "the divine life" --phrase true --anyTerm false --auth any --comp any --page 1 --deepLink both
+
+# Search Mother's works (use auth=any or auth=m, NOT auth=mother)
+bun run scripts/search.ts --q "massive golden door" --phrase false --anyTerm true --auth any --comp any --deepLink both --stripHtml true
+
+# Search specific Mother's compilation
+bun run scripts/search.ts --q "supramental manifestation" --phrase false --anyTerm true --auth m --comp any --deepLink both --stripHtml true
 ```
 
 Helpful flags:
@@ -60,6 +69,8 @@ Always prefer `--deepLink both` when providing citations to the user, unless spe
 ## Defaults and Heuristics
 
 - Default search scope: all works of Sri Aurobindo and The Mother (`auth=any`, `comp=any`).
+- **IMPORTANT**: When searching specifically for Mother's quotes, use `auth=m` (NOT `auth=mother`). Valid author values are: `sa` (Sri Aurobindo), `m` (the Mother), or `any` (both).
+- For Mother's quotes, use `auth=any` and `comp=any` to search across all her works (Agenda, CWM, etc.). The API will return results from the Agenda and CWM compilations.
 - Use `phrase=true` for direct quotes; fall back to `anyTerm=true` for paraphrases.
 - If the quote includes a date, consider `GET /api/v2/searchbyyear`.
 - Avoid over-filtering by volume unless the user requested it.
