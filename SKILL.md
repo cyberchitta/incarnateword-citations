@@ -66,6 +66,24 @@ Helpful flags:
 
 Always prefer `--deepLink both` when providing citations to the user, unless speed is critical (use `search`) or the query is too generic for text highlighting (use `paragraph`).
 
+### Known Issues & Limitations
+
+**Paragraph Counting Accuracy:**
+- Paragraph anchors (`#pN`) may be off by several positions for chapters that use the `items` array format (multi-section chapters)
+- Chapters with direct `txt` fields generally have accurate paragraph numbers
+- **Recommendation**: Users should manually verify paragraph anchors and adjust if needed
+
+**URL Encoding Issues:**
+- Special characters in search queries may cause URL encoding problems
+- Characters like `&`, `,` at the end of phrases can break URLs or prevent proper matching
+- **Workaround**: Drop trailing punctuation or problematic characters from search queries if URLs fail
+- The script captures trailing punctuation (`.`, `,`, `;`, `:`, `!`, `?`) from `<strong>` tags when available
+
+**Debugging Tips:**
+- If a paragraph anchor is incorrect, try the URL without `#pN` (search-only mode still works)
+- If URL doesn't load, check for unencoded `&` or other special characters in the search query
+- For critical citations, manually verify the link works and adjust the `#pN` value if needed
+
 ## Defaults and Heuristics
 
 - Default search scope: all works of Sri Aurobindo and The Mother (`auth=any`, `comp=any`).

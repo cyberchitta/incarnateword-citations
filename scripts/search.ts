@@ -45,6 +45,7 @@ type SearchResponse = {
 
 type ChapterResponse = {
   txt?: string;
+  items?: Array<{ txt?: string; t?: string }>;
 };
 
 const BASE_URL = "https://incarnateword.in";
@@ -169,16 +170,15 @@ function normalizeText(s: string): string {
 
 /**
  * Render chapter text through marked() and extract the inner HTML of each
- * <p> element.  The IW front-end assigns paragraph IDs (p1, p2, …) to every
+ * <p> element, matching the IW browser's rendering exactly.
+ * The IW front-end assigns paragraph IDs (p1, p2, …) to every
  * <p> inside `.text-bg`, so we must count paragraphs the same way.
- *
- * Splitting on `\n\n` is insufficient because Markdown thematic breaks (`---`)
- * produce `<hr>` tags, not `<p>` tags, and other Markdown structures (headings,
- * blockquotes, lists) also affect the `<p>` count.
  */
 function chapterTextToParagraphs(txt: string): string[] {
+  // Match IW browser: use breaks, smartypants, footnotes, gfm
   const html = marked(txt, {
     breaks: true,
+    smartypants: true,
     gfm: true,
   }) as string;
   const paragraphs: string[] = [];
@@ -199,11 +199,57 @@ async function fetchChapterParagraphs(
   const apiUrl = `${BASE_URL}/api${chapterUrl}?source=&onlyOrignalText=false`;
   try {
     const res = await fetch(apiUrl, { headers: { accept: "application/json" } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`    API error ${res.status} for ${apiUrl}`);
+      return null;
+    }
     const data = (await res.json()) as ChapterResponse;
-    if (!data.txt) return null;
-    return chapterTextToParagraphs(data.txt);
-  } catch {
+
+    // Handle both response formats: direct txt or items array
+    // Match browser logic exactly
+    let fullHtml: string;
+    if (data.items && Array.isArray(data.items)) {
+      // Match browser: process each item with title as H2, then markdown, then HR
+      let bindhtml = "";
+      for (const item of data.items) {
+        let finalData = "";
+        if (item.t) {
+          // Item title becomes H2 heading - match browser: NO options for title
+          finalData += marked("##" + item.t) as string;
+        }
+        if (item.txt) {
+          // Match browser: breaks, smartypants, footnotes, gfm for content
+          finalData += marked(item.txt, {
+            breaks: true,
+            smartypants: true,
+            gfm: true,
+          }) as string;
+          finalData += "<hr>";
+        }
+        bindhtml += finalData;
+      }
+      fullHtml = bindhtml;
+    } else if (data.txt) {
+      fullHtml = marked(data.txt, {
+        breaks: true,
+        smartypants: true,
+        gfm: true,
+      }) as string + "<hr>";
+    } else {
+      console.error(`    No txt or items field in response for ${apiUrl}`);
+      return null;
+    }
+
+    // Extract only <p> tags from the rendered HTML
+    const paragraphs: string[] = [];
+    const re = /<p>([\s\S]*?)<\/p>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(fullHtml)) !== null) {
+      paragraphs.push(m[1]);
+    }
+    return paragraphs;
+  } catch (err) {
+    console.error(`    Exception fetching ${apiUrl}:`, err);
     return null;
   }
 }
@@ -238,7 +284,7 @@ function findParagraphIds(
   for (let i = 0; i < paragraphs.length; i++) {
     const paraNorm = normalizeText(paragraphs[i]);
     if (paraNorm.includes(probe)) {
-      ids.push(i + 1);
+      ids.push(i + 1); // 1-indexed to match site's p1, p2, ...
     }
   }
   return ids;
@@ -248,11 +294,15 @@ function findParagraphIds(
  * Extract the first highlighted match from a raw search-result snippet.
  * The API wraps matches in <strong>…</strong>, so the content inside those
  * tags is the text as it literally appears on the page (with punctuation).
+ * Also captures trailing punctuation immediately after </strong>.
  * Falls back to the original query if no <strong> tag is found.
  */
 function extractSearchHit(rawSnippet: string, fallback: string): string {
-  const m = rawSnippet.match(/<strong>([\s\S]*?)<\/strong>/i);
-  return m ? stripHtml(m[1]) : fallback;
+  const m = rawSnippet.match(/<strong>([\s\S]*?)<\/strong>([.,;:!?])?/i);
+  if (!m) return fallback;
+  const matchedText = stripHtml(m[1]);
+  const trailingPunc = m[2] || '';
+  return matchedText + trailingPunc;
 }
 
 /** Build a deep link URL with ?search= and/or #pN based on mode. */
@@ -333,10 +383,13 @@ async function main() {
   const chapterCache = new Map<string, string[] | null>();
   if (needsParagraphs) {
     const uniqueUrls = [...new Set(cleanedResults.map((r) => r.url).filter(Boolean))];
-    // Fetch in parallel, limited to top 5 chapters to avoid excessive requests
+    console.error(`Fetching ${uniqueUrls.length} chapters for paragraph matching...`);
+    // Fetch all chapters in parallel for accurate paragraph anchors
     await Promise.all(
-      uniqueUrls.slice(0, 5).map(async (chUrl) => {
-        chapterCache.set(chUrl, await fetchChapterParagraphs(chUrl));
+      uniqueUrls.map(async (chUrl) => {
+        const paras = await fetchChapterParagraphs(chUrl);
+        console.error(`  ${chUrl}: ${paras ? paras.length : "FAILED"} paragraphs`);
+        chapterCache.set(chUrl, paras);
       }),
     );
   }
@@ -354,8 +407,12 @@ async function main() {
       return buildDeepUrl(pageUrl, searchHit, [], mode);
     }
     const paragraphs = chapterCache.get(r.url);
+    // Use searchHit (the exact matched text) instead of the full snippet for better matching
     const paraIds =
-      paragraphs && r.txt ? findParagraphIds(paragraphs, r.txt) : [];
+      paragraphs && searchHit ? findParagraphIds(paragraphs, searchHit) : [];
+    if (paragraphs && paraIds.length === 0) {
+      console.error(`  WARNING: No paragraph match for "${searchHit.slice(0, 50)}..." in ${r.url}`);
+    }
     return buildDeepUrl(pageUrl, searchHit, paraIds, mode);
   });
 

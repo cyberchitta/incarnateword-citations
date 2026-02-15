@@ -72,15 +72,58 @@ Response:
 
 Query params:
 - `source` (string, optional): edition source
-- `onlyOrignalText` (bool, optional): original text only
+- `onlyOrignalText` (bool, optional): original text only (note: typo "Orignal" is in actual API)
 
-Response:
-- `txt`: full chapter text (paragraphs separated by `\n\n`)
-- `mot`: epigraph/motto (markdown blockquotes, rendered separately from `txt`)
+Response (two formats):
+
+**Format 1: Direct text (simpler chapters)**
+- `txt`: full chapter text (markdown format)
 - `t`: chapter title
+- `mot`: epigraph/motto (markdown blockquotes, rendered separately)
 - `paraByPara`: parallel translation data (if available)
 
-Notes: Paragraphs in `txt` split on `\n\n` map 1:1 to the site's dynamic `p1`, `p2`, ... IDs (assigned by client-side JS to `<p>` elements inside `.text-bg`). The `mot` content renders in a separate `.motto` container and does not affect paragraph numbering.
+**Format 2: Items array (multi-section chapters)**
+- `items`: array of section objects
+  - `t`: section title (optional)
+  - `txt`: section text (markdown format)
+  - `dt`, `yr`, `mo`: date fields (optional)
+- `t`: chapter title
+- Other fields as in Format 1
+
+### Browser Rendering Process (from incarnateword.in source)
+
+The browser processes chapter content as follows:
+
+1. **For items array:**
+   ```javascript
+   for (let l = 0; l < data.items.length; l++) {
+       let finalData = "";
+       if (data.items[l].hasOwnProperty("t")) {
+           finalData += marked("##" + data.items[l].t);  // No options - creates H2
+       }
+       finalData += marked(data.items[l].txt,
+           {breaks: true, smartypants: true, footnotes: true, gfm: true}) + "<hr>";
+       bindhtml += finalData;
+   }
+   ```
+
+2. **For direct txt:**
+   ```javascript
+   formedHtml = marked(data.txt,
+       {breaks: true, smartypants: true, footnotes: true, gfm: true}) + "<hr>";
+   ```
+
+3. **Post-processing:**
+   - Replace `[digit]` with `<strong>digit</strong>` (footnote markers)
+   - Replace `@text@` with page number spans
+   - Insert into `.text-bg` container
+
+4. **Paragraph IDs:**
+   - Paragraph IDs (`p1`, `p2`, ...) are assigned to `<p>` elements in DOM order
+   - Only `<p>` tags count; `<h2>`, `<hr>`, and other elements are skipped
+   - IDs are **1-indexed** (start at p1, not p0)
+
+**Known Issue:** The script's paragraph counting for chapters with `items` arrays may be inaccurate due to subtle differences in markdown rendering. Manual verification recommended.
 
 ## Deep Linking (site features)
 
@@ -91,6 +134,14 @@ The site supports paragraph-level deep links and text highlighting:
 - `#pN-pM` — highlights a contiguous range of paragraphs
 - `#pN,pM,pO` — highlights non-contiguous paragraphs
 - Combined: `?search=<terms>#pN` — both text highlighting and paragraph anchoring
+
+**URL Encoding Caveats:**
+- Search terms must be URL-encoded (spaces as `%20`, commas as `%2C`, etc.)
+- Trailing punctuation is important for precise matching but can cause issues:
+  - The `&` character can break URLs if not properly encoded as `%26`
+  - Complex punctuation sequences (`,`, `-`, `&`) may need to be dropped for URL stability
+- The script extracts search terms from `<strong>` tags in search results and attempts to preserve trailing punctuation (`.`, `,`, `;`, `:`, `!`, `?`)
+- If a generated URL fails to load, try removing trailing punctuation from the search query
 
 ## Volumes / Metadata
 
