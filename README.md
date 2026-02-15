@@ -32,6 +32,8 @@ bun run scripts/search.ts \
 
 Or use it as a Claude Code skill — Claude will call the search script and format citations automatically.
 
+**Note:** Deep link URLs (with `#pN` paragraph anchors) may require manual adjustment. See [SKILL.md](SKILL.md) for known limitations.
+
 ## What it searches
 
 The complete published works of Sri Aurobindo (CWSA, SABCL, Arya) and The Mother (CWM, Agenda) hosted on [incarnateword.in](https://incarnateword.in).
